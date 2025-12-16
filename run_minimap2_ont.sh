@@ -5,6 +5,57 @@ echo "=== Nanopore → plasmid alignment helper ==="
 echo
 
 #############################################
+# Helper: resolve filename with or without extension
+#############################################
+resolve_file() {
+  local folder="$1"
+  local name="$2"
+  local kind="$3"   # "ref" or "ont"
+
+  # Strip surrounding quotes
+  name="${name%\"}"
+  name="${name#\"}"
+  name="${name%\'}"
+  name="${name#\'}"
+
+  # 1) Try as-is
+  if [ -f "${folder}/${name}" ]; then
+    echo "${folder}/${name}"
+    return 0
+  fi
+
+  # 2) Normalize base name (strip common extensions if user half-typed)
+  local base="$name"
+  base="${base%.gz}"
+  base="${base%.fa}"
+  base="${base%.fasta}"
+  base="${base%.fna}"
+  base="${base%.fas}"
+  base="${base%.fastq}"
+  base="${base%.fq}"
+
+  local exts=()
+  if [ "$kind" = "ref" ]; then
+    exts=(.fa .fasta .fna .fas)
+  else
+    exts=(.fastq .fq .fastq.gz .fq.gz)
+  fi
+
+  local cand
+  for ext in "${exts[@]}"; do
+    cand="${folder}/${base}${ext}"
+    if [ -f "$cand" ]; then
+      echo "$cand"
+      return 0
+    fi
+  done
+
+  # If nothing found, return empty string + non-zero status
+  echo ""
+  return 1
+}
+
+#############################################
 # 1) Ask for folder
 #############################################
 
@@ -38,26 +89,39 @@ ls "$seq_folder" || true
 echo
 
 #############################################
-# 2) Ask for filenames
+# 2) Ask for filenames (with or without extension)
 #############################################
 
-read -r -p "Paste the reference FASTA filename (e.g. plasmid.fa): " ref_seq
-if [ -z "$ref_seq" ]; then
-  echo "ERROR: Reference filename cannot be empty." >&2
+read -r -p "Paste the reference name (with or without extension, e.g. plasmid or plasmid.fa): " ref_input
+if [ -z "$ref_input" ]; then
+  echo "ERROR: Reference name cannot be empty." >&2
   exit 1
 fi
 
-read -r -p "Paste the ONT FASTQ filename (e.g. reads.fastq.gz): " ont_seq
-if [ -z "$ont_seq" ]; then
-  echo "ERROR: ONT filename cannot be empty." >&2
+read -r -p "Paste the ONT reads name (with or without extension, e.g. sample1 or sample1.fastq.gz): " ont_input
+if [ -z "$ont_input" ]; then
+  echo "ERROR: ONT name cannot be empty." >&2
   exit 1
 fi
 
-ref_path="${seq_folder}/${ref_seq}"
-ont_path="${seq_folder}/${ont_seq}"
+# Resolve to actual files on disk
+ref_path="$(resolve_file "$seq_folder" "$ref_input" "ref" || true)"
+ont_path="$(resolve_file "$seq_folder" "$ont_input" "ont" || true)"
+
+if [ -z "$ref_path" ]; then
+  echo "ERROR: Could not find reference file for input '$ref_input' in folder: $seq_folder" >&2
+  echo "       Tried common FASTA extensions (.fa, .fasta, .fna, .fas)." >&2
+  exit 1
+fi
+
+if [ -z "$ont_path" ]; then
+  echo "ERROR: Could not find ONT file for input '$ont_input' in folder: $seq_folder" >&2
+  echo "       Tried common FASTQ extensions (.fastq, .fq, .fastq.gz, .fq.gz)." >&2
+  exit 1
+fi
 
 #############################################
-# 3) Check dependencies + inputs
+# 3) Check dependencies
 #############################################
 
 if ! command -v minimap2 >/dev/null 2>&1; then
@@ -70,37 +134,36 @@ if ! command -v samtools >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -f "$ref_path" ]; then
-  echo "ERROR: Reference sequence not found: $ref_path" >&2
-  exit 1
-fi
-
-if [ ! -f "$ont_path" ]; then
-  echo "ERROR: ONT reads file not found: $ont_path" >&2
-  exit 1
-fi
-
 #############################################
-# 4) Build output names
+# 4) Build output names (fastaRoot_vs_fastqRoot)
 #############################################
 
-ref_base=$(basename "$ref_seq")
-ref_root=${ref_base%%.*}      # strip extension(s)
+ref_base=$(basename "$ref_path")
+ont_base=$(basename "$ont_path")
 
-ont_base=$(basename "$ont_seq")
-ont_base=${ont_base%.gz}
-ont_base=${ont_base%.fastq}
-ont_base=${ont_base%.fq}
-ont_root=${ont_base%%.*}
+# Strip possible extensions
+ref_root="$ref_base"
+ref_root="${ref_root%.fa}"
+ref_root="${ref_root%.fasta}"
+ref_root="${ref_root%.fna}"
+ref_root="${ref_root%.fas}"
 
-out_sam="${seq_folder}/${ont_root}_vs_${ref_root}.sam"
-out_bam="${seq_folder}/${ont_root}_vs_${ref_root}.sorted.bam"
+ont_root="$ont_base"
+ont_root="${ont_root%.gz}"
+ont_root="${ont_root%.fastq}"
+ont_root="${ont_root%.fq}"
+
+out_sam="${seq_folder}/${ref_root}_vs_${ont_root}.sam"
+out_bam="${seq_folder}/${ref_root}_vs_${ont_root}.sorted.bam"
 
 echo
-echo "Reference: $ref_path"
-echo "Reads:     $ont_path"
-echo "SAM out:   $out_sam"
-echo "BAM out:   $out_bam"
+echo "Resolved files:"
+echo "  Reference: $ref_path"
+echo "  Reads:     $ont_path"
+echo
+echo "Planned outputs:"
+echo "  SAM : $out_sam"
+echo "  BAM : $out_bam"
 echo
 
 read -r -p "Proceed with alignment? [y/N]: " confirm
