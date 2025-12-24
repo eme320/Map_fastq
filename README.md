@@ -11,6 +11,14 @@ Run it:
 
 ./run_minimap2_ont.sh
 
+if no brew, run following:
+  
+  xcode-select
+  ruby -e “$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)” (asks for Kerberos ID)
+ OR
+ \/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" (asks for Kerberos ID)
+  brew install minimap2 (to install minimap)
+  brew install samtools (to install samtools)
 
 Then just paste:
 
