@@ -3,7 +3,7 @@ How to use
 Save run_minimap2_ont.sh (e.g. in ~/bin or any folder).
 
 Make it executable: in terminal:
-
+cd ~/Downloads/  - if your file is in downloads
 chmod +x run_minimap2_ont.sh
 
 
